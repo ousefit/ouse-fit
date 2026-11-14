@@ -278,9 +278,20 @@
   .close { display: grid; place-items: center; border: 1px solid var(--line); background: white; color: var(--ink); border-radius: 50%; width: 40px; height: 40px; font-size: 24px; cursor: pointer; transition: background .25s ease, transform .25s ease; }
   .close:hover { background: var(--pink); transform: rotate(90deg); }
   .cart-empty { color: var(--muted); padding: 24px 0; font-size: 13px; line-height: 1.7; }
-  .cart-item { padding: 15px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 12px; animation: cart-item-in .3s var(--ease) both; }
+  .cart-item { padding: 15px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; animation: cart-item-in .3s var(--ease) both; }
   .cart-item strong { font-size: 12px; }
   .cart-item small { display: block; color: var(--muted); margin-top: 6px; line-height: 1.7; font-size: 11px; }
+  .cart-item-img { width: 52px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: #fdf7fa; display: block; }
+  .coupon-box { margin: 14px 0 4px; }
+  .coupon-row { display: grid; grid-template-columns: 1fr auto; gap: 9px; margin-top: 6px; }
+  .coupon-row .btn { padding: 12px 18px; font-size: 11px; }
+  .coupon-message { font-size: 11px; line-height: 1.6; margin: 9px 0 0; }
+  .coupon-message.ok { color: #62745b; font-weight: 700; }
+  .coupon-message.erro { color: #a65f78; font-weight: 700; }
+  .total-row.discount-row span:last-child { color: #62745b; font-weight: 750; }
+  .total-row.final-row { font-size: 15px; }
+  .total-row.final-row span:last-child { color: var(--pink-dark); }
+  .detail-color-name { margin: 9px 0 0; color: var(--pink-dark); font-size: 11px; font-weight: 700; }
   .remove { align-self: center; border: 0; background: transparent; color: var(--pink-dark); cursor: pointer; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
   .remove:hover { color: var(--pink-deep); }
   .total-row { display: flex; justify-content: space-between; gap: 15px; padding: 20px 0; font-weight: 750; font-size: 13px; }
@@ -551,6 +562,16 @@
       <div class="drawer-head"><h2>Seu carrinho</h2><button class="close" id="close-cart" aria-label="Fechar">×</button></div>
       <div id="cart-items"><p class="cart-empty">Seu carrinho está vazio por enquanto.</p></div>
       <div class="total-row"><span>Total dos produtos</span><span id="cart-total">R$ 0,00</span></div>
+      <div class="coupon-box">
+        <label class="field-label" for="coupon-code">Cupom de desconto</label>
+        <div class="coupon-row">
+          <input id="coupon-code" placeholder="Ex.: BEMVINDA10" autocomplete="off" aria-label="Código do cupom">
+          <button type="button" class="btn" id="coupon-apply">Aplicar</button>
+        </div>
+        <p class="coupon-message" id="coupon-message" hidden></p>
+      </div>
+      <div class="total-row discount-row" id="discount-row" hidden><span id="discount-label">Desconto</span><span id="cart-discount">−R$ 0,00</span></div>
+      <div class="total-row final-row" id="final-row" hidden><span>Total com desconto</span><span id="cart-final">R$ 0,00</span></div>
       <button type="button" class="btn continue-shopping" id="continue-shopping"><span aria-hidden="true">←</span> Continuar comprando</button>
       <p class="checkout-note">A entrega não está incluída neste total. Se o endereço for afastado, a taxa será informada e combinada pelo WhatsApp.</p>
       <h3 class="checkout-title">Finalizar pedido</h3>
@@ -593,7 +614,7 @@
           <div class="detail-price" id="detail-price">R$ 0,00</div>
           <p class="detail-description" id="detail-description"></p>
           <p class="detail-stock" id="detail-stock" aria-live="polite"></p>
-          <div class="detail-option-group"><span class="detail-option-title">Cor disponível</span><div class="detail-colors" id="detail-colors"></div></div>
+          <div class="detail-option-group"><span class="detail-option-title">Cor disponível</span><div class="detail-colors" id="detail-colors"></div><p class="detail-color-name" id="detail-color-name" aria-live="polite"></p></div>
           <div class="detail-option-group"><span class="detail-option-title">Tamanho</span><div class="detail-sizes" id="detail-sizes"></div></div>
           <div class="detail-option-group"><label class="detail-option-title" for="detail-quantity">Quantidade</label><div class="quantity-stepper"><button type="button" id="detail-quantity-minus" aria-label="Diminuir quantidade">−</button><input type="number" id="detail-quantity" min="1" value="1" inputmode="numeric" aria-label="Quantidade desejada"><button type="button" id="detail-quantity-plus" aria-label="Aumentar quantidade">+</button></div></div>
           <div class="detail-actions"><button type="button" class="btn btn-add" id="detail-add">Adicionar ao carrinho</button><button type="button" class="btn btn-buy" id="detail-buy">Comprar agora</button></div>
@@ -940,6 +961,7 @@
         const active = color === detailColor;
         return `<button type="button" class="color-choice ${active ? "active" : ""}" data-color="${escapeHtml(color)}" aria-pressed="${active}" title="${escapeHtml(color)}"><span style="background:${hex}"></span>${escapeHtml(color)}</button>`;
       }).join("");
+      document.getElementById("detail-color-name").textContent = detailColor ? `Cor selecionada: ${detailColor}` : "";
       colorsEl.querySelectorAll("[data-color]").forEach(button => button.addEventListener("click", () => {
         detailColor = button.dataset.color;
         const validSizes = sizesForColor(detailProduct, detailColor);
@@ -1118,18 +1140,53 @@
     renderProducts();
 
     function removeFromCart(index) { cart.splice(index, 1); renderCart(); }
+    let appliedCoupon = null;
+    const onlyDigits = value => String(value || "").replace(/\D/g, "");
+    function cartTotals() {
+      const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+      const discount = appliedCoupon ? total * appliedCoupon.percent / 100 : 0;
+      return { total, discount, final: total - discount };
+    }
     function renderCart() {
       const count = cart.reduce((sum, item) => sum + item.qty, 0);
-      const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+      const { total, discount, final } = cartTotals();
       document.getElementById("cart-count").textContent = count;
       document.getElementById("cart-total").textContent = money(total);
+      const hasDiscount = Boolean(appliedCoupon) && discount > 0;
+      document.getElementById("discount-row").hidden = !hasDiscount;
+      document.getElementById("final-row").hidden = !hasDiscount;
+      if (hasDiscount) {
+        document.getElementById("discount-label").textContent = `Cupom ${appliedCoupon.code} (−${appliedCoupon.percent}%)`;
+        document.getElementById("cart-discount").textContent = `−${money(discount)}`;
+        document.getElementById("cart-final").textContent = money(final);
+      }
       bumpCartButton();
       document.getElementById("cart-items").innerHTML = cart.length
-        ? cart.map((item, index) => `<div class="cart-item"><div><strong>${escapeHtml(item.name)} × ${item.qty}</strong><small>Cor: ${escapeHtml(item.color)} · Tamanho: ${escapeHtml(item.size)}<br>${money(item.price)} cada</small></div><button class="remove" onclick="removeFromCart(${index})">Remover</button></div>`).join("")
+        ? cart.map((item, index) => `<div class="cart-item">${item.image ? `<img class="cart-item-img" src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="this.style.display='none'">` : ""}<div><strong>${escapeHtml(item.name)} × ${item.qty}</strong><small>Cor: ${escapeHtml(item.color)} · Tamanho: ${escapeHtml(item.size)}<br>${money(item.price)} cada</small></div><button class="remove" onclick="removeFromCart(${index})">Remover</button></div>`).join("")
         : '<p class="cart-empty">Seu carrinho está vazio por enquanto.</p>';
       if (typeof renderProducts === "function") renderProducts();
       if (detailProduct) updateDetailAvailability();
     }
+    document.getElementById("coupon-apply").addEventListener("click", async () => {
+      const code = document.getElementById("coupon-code").value.trim().toUpperCase();
+      const phone = onlyDigits(document.getElementById("customer-phone").value);
+      const messageEl = document.getElementById("coupon-message");
+      messageEl.hidden = false;
+      if (!code) { appliedCoupon = null; messageEl.className = "coupon-message erro"; messageEl.textContent = "Digite o código do cupom."; renderCart(); return; }
+      if (phone.length < 10) { appliedCoupon = null; messageEl.className = "coupon-message erro"; messageEl.textContent = "Preencha seu WhatsApp abaixo para validar o cupom."; renderCart(); return; }
+      messageEl.className = "coupon-message"; messageEl.textContent = "Validando cupom...";
+      const { data, error } = await sb.rpc("cupom_validar", { p_codigo: code, p_fone: phone });
+      if (error || !data?.ok) {
+        appliedCoupon = null;
+        messageEl.className = "coupon-message erro";
+        messageEl.textContent = data?.message || "Não foi possível validar o cupom. Tente de novo.";
+      } else {
+        appliedCoupon = { code, percent: Number(data.percent) || 0 };
+        messageEl.className = "coupon-message ok";
+        messageEl.textContent = data.message || "Cupom aplicado!";
+      }
+      renderCart();
+    });
     function showToast(message) {
       const toast = document.getElementById("toast");
       toast.textContent = message; toast.classList.add("show");
@@ -1170,7 +1227,15 @@
       const address = document.getElementById("customer-address").value.trim();
       const reference = document.getElementById("customer-reference").value.trim();
       const payment = document.querySelector('input[name="payment"]:checked').value;
-      const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+      const { total, discount, final } = cartTotals();
+      if (appliedCoupon && discount > 0) {
+        const { data: couponData, error: couponError } = await sb.rpc("cupom_registrar", { p_codigo: appliedCoupon.code, p_fone: onlyDigits(phone) });
+        if (couponError || !couponData?.ok) {
+          appliedCoupon = null; renderCart();
+          showToast(couponData?.message || "Não foi possível aplicar o cupom. Tente de novo.");
+          return;
+        }
+      }
       const lines = cart.map(item => `• ${item.name} — ${item.qty}x | ${item.color} | Tam. ${item.size} | ${money(item.price * item.qty)}`);
       const message = [
         "Olá, Ouse Fit! 💗 Quero finalizar meu pedido:",
@@ -1178,6 +1243,7 @@
         ...lines,
         "",
         `Total dos produtos: ${money(total)}`,
+        ...(appliedCoupon && discount > 0 ? [`Cupom ${appliedCoupon.code} (−${appliedCoupon.percent}%): −${money(discount)}`, `Total com desconto: ${money(final)}`] : []),
         "Entrega: confirmar taxa somente se o endereço for afastado.",
         "",
         `Nome: ${name}`,
@@ -1201,7 +1267,10 @@
         showToast(error ? "Não foi possível reservar agora. Tente de novo." : `Acabou de esgotar: ${(data.esgotados || []).join(", ")}`);
         return;
       }
-      cart.length = 0; renderCart(); await loadReservations();
+      cart.length = 0; appliedCoupon = null;
+      document.getElementById("coupon-code").value = "";
+      document.getElementById("coupon-message").hidden = true;
+      renderCart(); await loadReservations();
       const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
       if (win) win.location.href = url; else window.location.href = url;
     });
