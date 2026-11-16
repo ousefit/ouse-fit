@@ -1289,7 +1289,13 @@
           signed.data.forEach((p, i) => resolved[paths[i]] = p.signedUrl);
         }
         const photo = p => p && p.startsWith("storage:") ? resolved[p] : p;
-        products.splice(0, products.length, ...rows.map(p => ({ ...p, image: photo(p.image), gallery: (p.gallery || []).map(photo) })));
+        // Peças novas aparecem primeiro; calçados ficam no meio da coleção, nunca no início.
+        const newestFirst = rows.slice().sort((a, b) => Number(b.id) - Number(a.id));
+        const shoes = newestFirst.filter(p => p.category === "calcados");
+        const clothing = newestFirst.filter(p => p.category !== "calcados");
+        const middle = Math.ceil(clothing.length / 2);
+        const ordered = [...clothing.slice(0, middle), ...shoes, ...clothing.slice(middle)];
+        products.splice(0, products.length, ...ordered.map(p => ({ ...p, image: photo(p.image), gallery: (p.gallery || []).map(photo) })));
         for (let i = cart.length - 1; i >= 0; i--) {
           const fresh = products.find(p => p.id === cart[i].id);
           if (!fresh) cart.splice(i, 1); else Object.assign(cart[i], fresh);
