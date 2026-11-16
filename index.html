@@ -149,6 +149,12 @@
   .card-dots { position: absolute; z-index: 2; left: 50%; bottom: 12px; display: flex; gap: 5px; padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.85); transform: translateX(-50%); pointer-events: none; }
   .card-dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(166,95,120,.3); transition: background .2s ease, transform .2s ease; }
   .card-dots span.active { background: var(--pink-dark); transform: scale(1.2); }
+  .product-image-button.has-gallery { touch-action: pan-y; }
+  @media (hover: hover) and (pointer: fine) {
+    .product-image-button .card-dots { opacity: 0; transition: opacity .2s ease; }
+    .product-image-button.is-sliding .card-dots { opacity: 1; }
+  }
+  @media (max-width: 680px) { .card-dots { bottom: 8px; padding: 4px 6px; gap: 4px; } .card-dots span { width: 5px; height: 5px; } }
   .product-image-button { width: 100%; padding: 0; border: 0; text-align: center; cursor: pointer; font: inherit; color: inherit; }
   .product-image-button:focus-visible { outline-offset: -4px; }
   .product-name-link { padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
@@ -842,8 +848,10 @@
         ? `<img src="${escapeHtml(cardImage)}" alt="${escapeHtml(product.name)}" loading="lazy" style="--image-scale:${productImageScale(product)}" onerror="this.style.display='none';this.parentElement.querySelector('.image-placeholder').style.display='block'"><div class="image-placeholder" style="display:none"><b>OUSE FIT</b>Adicione aqui a foto<br>de ${escapeHtml(product.name)}</div>`
         : `<div class="image-placeholder"><b>OUSE FIT</b>Adicione aqui a foto<br>de ${escapeHtml(product.name)}</div>`;
       const remaining = availableStock(product, selectedColor, selectedSize);
+      const photoCount = cardImage ? productImages(product).length : 0;
+      const dotsContent = photoCount > 1 ? `<div class="card-dots" aria-hidden="true">${Array.from({ length: photoCount }, (_, i) => `<span class="${i === 0 ? "active" : ""}"></span>`).join("")}</div>` : "";
       return `<article class="product">
-        <button type="button" class="product-image product-image-button" data-product-id="${product.id}" onclick="openProductDetail(${product.id}, this)" aria-label="Ver detalhes de ${escapeHtml(product.name)}">${imageContent}</button>
+        <button type="button" class="product-image product-image-button ${photoCount > 1 ? "has-gallery" : ""}" data-product-id="${product.id}" onclick="openProductDetail(${product.id}, this)" aria-label="Ver detalhes de ${escapeHtml(product.name)}">${imageContent}${dotsContent}</button>
         <div class="product-info">
           <div class="product-title-row"><div><h3><button type="button" class="product-name-link" onclick="openProductDetail(${product.id}, this)">${escapeHtml(product.name)}</button></h3><div class="muted">${escapeHtml(product.description)}</div><button type="button" class="product-view-link" onclick="openProductDetail(${product.id}, this)">Ver fotos e detalhes <span aria-hidden="true">↗</span></button></div><div class="price">${money(product.price)}</div></div>
           <span class="product-stock ${remaining > 0 && remaining <= 3 ? "low" : ""}" id="product-stock-${product.id}">${stockText(remaining)}</span>
@@ -914,59 +922,101 @@
       setupCardSlideshows();
     }
 
-    // Ao passar o mouse na foto do produto, as fotos da galeria vão trocando sozinhas.
+    // Fotos dos cartões: no computador trocam sozinhas ao passar o mouse;
+    // no celular, deslize o dedo para os lados na foto para ver as outras.
     var cardSlideTimer = null;
     var cardSlideButton = null;
+    function cardSources(button) {
+      const product = products.find(item => item.id === Number(button.dataset.productId));
+      return product ? productImages(product) : [];
+    }
+    function showCardPhoto(button, index, animate = true) {
+      const sources = cardSources(button);
+      const img = button.querySelector("img");
+      if (!img || sources.length < 2) return;
+      const target = ((index % sources.length) + sources.length) % sources.length;
+      button.dataset.photoIndex = String(target);
+      const apply = () => {
+        img.style.display = "";
+        img.src = sources[target];
+        button.querySelectorAll(".card-dots span").forEach((dot, i) => dot.classList.toggle("active", i === target));
+        img.classList.remove("is-fading");
+      };
+      if (!animate) { apply(); return; }
+      img.classList.add("is-fading");
+      setTimeout(apply, 200);
+    }
+    function preloadCard(button) {
+      if (button.dataset.preloaded) return;
+      button.dataset.preloaded = "1";
+      cardSources(button).forEach(source => { const preload = new Image(); preload.src = source; });
+    }
     function stopCardSlideshow() {
       clearTimeout(cardSlideTimer);
       cardSlideTimer = null;
       const button = cardSlideButton;
       cardSlideButton = null;
       if (!button) return;
-      const product = products.find(item => item.id === Number(button.dataset.productId));
-      const img = button.querySelector("img");
-      const first = product ? productImages(product)[0] : null;
-      if (img && first) { img.classList.remove("is-fading"); img.style.display = ""; img.src = first; }
-      button.querySelector(".card-dots")?.remove();
+      button.classList.remove("is-sliding");
+      showCardPhoto(button, 0, false);
     }
     function startCardSlideshow(button) {
       if (cardSlideButton === button) return;
       stopCardSlideshow();
-      const product = products.find(item => item.id === Number(button.dataset.productId));
-      const img = button.querySelector("img");
-      if (!product || !img) return;
-      const sources = productImages(product);
-      if (sources.length < 2) return;
-      sources.forEach(source => { const preload = new Image(); preload.src = source; });
+      if (cardSources(button).length < 2) return;
+      preloadCard(button);
       cardSlideButton = button;
-      const dots = document.createElement("div");
-      dots.className = "card-dots";
-      dots.setAttribute("aria-hidden", "true");
-      dots.innerHTML = sources.map((_, i) => `<span class="${i === 0 ? "active" : ""}"></span>`).join("");
-      button.appendChild(dots);
-      let index = 0;
+      button.classList.add("is-sliding");
       const next = () => {
         if (cardSlideButton !== button) return;
-        index = (index + 1) % sources.length;
-        img.classList.add("is-fading");
-        setTimeout(() => {
-          if (cardSlideButton !== button) return;
-          img.style.display = "";
-          img.src = sources[index];
-          dots.querySelectorAll("span").forEach((dot, i) => dot.classList.toggle("active", i === index));
-          img.classList.remove("is-fading");
-          cardSlideTimer = setTimeout(next, 1400);
-        }, 220);
+        showCardPhoto(button, Number(button.dataset.photoIndex || 0) + 1);
+        cardSlideTimer = setTimeout(next, 1600);
       };
       cardSlideTimer = setTimeout(next, 650);
     }
+    function setupCardSwipe(button) {
+      let startX = 0, startY = 0, tracking = false;
+      button.addEventListener("touchstart", event => {
+        if (event.touches.length !== 1) { tracking = false; return; }
+        startX = event.touches[0].clientX;
+        startY = event.touches[0].clientY;
+        tracking = true;
+        preloadCard(button);
+      }, { passive: true });
+      button.addEventListener("touchmove", event => {
+        if (!tracking) return;
+        const dx = event.touches[0].clientX - startX;
+        const dy = event.touches[0].clientY - startY;
+        if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) tracking = false; // rolando a página
+      }, { passive: true });
+      button.addEventListener("touchend", event => {
+        if (!tracking) return;
+        tracking = false;
+        const dx = event.changedTouches[0].clientX - startX;
+        const dy = event.changedTouches[0].clientY - startY;
+        if (Math.abs(dx) < 35 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+        button.dataset.swipedAt = String(Date.now());
+        showCardPhoto(button, Number(button.dataset.photoIndex || 0) + (dx < 0 ? 1 : -1));
+      }, { passive: true });
+    }
     function setupCardSlideshows() {
+      if (!productsEl.dataset.swipeGuard) {
+        productsEl.dataset.swipeGuard = "1";
+        // Depois de deslizar a foto, o toque não abre o produto.
+        productsEl.addEventListener("click", event => {
+          const button = event.target.closest(".product-image-button");
+          if (button && Date.now() - Number(button.dataset.swipedAt || 0) < 600) { event.preventDefault(); event.stopPropagation(); }
+        }, true);
+      }
       cardSlideButton = null;
       clearTimeout(cardSlideTimer);
-      if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-      productsEl.querySelectorAll(".product-image-button[data-product-id]").forEach(button => {
-        button.addEventListener("mouseenter", () => startCardSlideshow(button));
-        button.addEventListener("mouseleave", () => { if (cardSlideButton === button) stopCardSlideshow(); });
+      const canHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+      productsEl.querySelectorAll(".product-image-button.has-gallery").forEach(button => {
+        setupCardSwipe(button);
+        if (canHover) {
+          button.addEventListener("mouseenter", () => startCardSlideshow(button));
+          button.addEventListener("mouseleave", () => { if (cardSlideButton === button) stopCardSlideshow(); });
+        }
       });
     }
 
